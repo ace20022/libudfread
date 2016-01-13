@@ -139,7 +139,7 @@ static void *_safe_realloc(void *p, size_t s)
 #define utf16lo_to_utf8(out, out_pos, out_size, ch) \
   do {                                              \
     if (ch < 0x80) {                                \
-      out[out_pos++] = ch;                          \
+      out[out_pos++] = (uint8_t)ch;                          \
     } else {                                        \
       out_size++;                                   \
       out = (uint8_t *)_safe_realloc(out, out_size);\
@@ -236,6 +236,9 @@ static uint32_t _read_blocks(udfread_block_input *input,
     if (!input || (int)nblocks < 1) {
         return 0;
     }
+
+    if (((int64_t)lba + (int64_t)nblocks) > UINT32_MAX)
+      return 0;
 
     result = input->read(input, lba, buf, nblocks, flags);
 
@@ -906,11 +909,17 @@ static struct udf_dir *_read_dir(udfread *udf, const struct long_ad *icb)
         free_file_entry(&fe);
         return NULL;
     }
+    // ECMA ECMA 167 4/8.6.2
+    if (fe->length > UINT32_MAX) {
+      udf_error("maximum directory size exceeded\n");
+      free_file_entry(&fe);
+      return NULL;
+    }
 
     if (fe->content_inline) {
         dir = (struct udf_dir *)calloc(1, sizeof(struct udf_dir));
         if (dir) {
-            if (_parse_dir(&fe->data.content[0], fe->length, dir) < 0) {
+            if (_parse_dir(&fe->data.content[0], (uint32_t)fe->length, dir) < 0) {
                 udf_error("failed parsing inline directory file\n");
                 _free_dir(&dir);
             }
@@ -1404,12 +1413,16 @@ uint32_t udfread_read_blocks(UDFFILE *p, void *buf, uint32_t file_block, uint32_
 
 static ssize_t _read(UDFFILE *p, void *buf, size_t bytes)
 {
-    /* start from middle of block ? */
+    /* start from middle of block ?
+     * maximal file size, i.e. position, is 2^32 * block size
+     */
+
     size_t pos_off = p->pos % UDF_BLOCK_SIZE;
+    uint32_t file_block = (uint32_t)(p->pos / UDF_BLOCK_SIZE);
     if (pos_off) {
         size_t chunk_size = UDF_BLOCK_SIZE - pos_off;
         if (!p->block_valid) {
-            if (udfread_read_blocks(p, p->block, p->pos / UDF_BLOCK_SIZE, 1, 0) != 1) {
+            if (udfread_read_blocks(p, p->block, file_block, 1, 0) != 1) {
                 return -1;
             }
             p->block_valid = 1;
@@ -1425,7 +1438,7 @@ static ssize_t _read(UDFFILE *p, void *buf, size_t bytes)
     /* read full block(s) ? */
     if (bytes >= UDF_BLOCK_SIZE) {
         uint32_t num_blocks = bytes / UDF_BLOCK_SIZE;
-        num_blocks = udfread_read_blocks(p, buf, p->pos / UDF_BLOCK_SIZE, num_blocks, 0);
+        num_blocks = udfread_read_blocks(p, buf, file_block, num_blocks, 0);
         if (num_blocks < 1) {
             return -1;
         }
@@ -1434,7 +1447,7 @@ static ssize_t _read(UDFFILE *p, void *buf, size_t bytes)
     }
 
     /* read beginning of a block */
-    if (udfread_read_blocks(p, p->block, p->pos / UDF_BLOCK_SIZE, 1, 0) != 1) {
+    if (udfread_read_blocks(p, p->block, file_block, 1, 0) != 1) {
         return -1;
     }
     p->block_valid = 1;
@@ -1449,9 +1462,10 @@ static ssize_t _read(UDFFILE *p, void *buf, size_t bytes)
 ssize_t udfread_file_read(UDFFILE *p, void *buf, size_t bytes)
 {
     uint8_t *bufpt = (uint8_t *)buf;
+    int64_t file_size = udfread_file_size(p);
 
     /* sanity checks */
-    if (!p || !buf || p->pos < 0) {
+    if (!p || !buf || p->pos < 0 || p->pos > file_size || file_size < 0) {
         return -1;
     }
     if ((ssize_t)bytes < 0 || (int64_t)bytes < 0) {
@@ -1459,8 +1473,8 @@ ssize_t udfread_file_read(UDFFILE *p, void *buf, size_t bytes)
     }
 
     /* limit range to file size */
-    if ((uint64_t)p->pos + bytes > (uint64_t)udfread_file_size(p)) {
-        bytes = udfread_file_size(p) - p->pos;
+    if (p->pos + (uint64_t)bytes >(uint64_t)file_size) {
+        bytes = (size_t)(file_size - p->pos);
     }
 
     /* small files may be stored inline in file entry */

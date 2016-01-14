@@ -51,7 +51,7 @@
 #endif
 
 #ifdef _WIN32
-static ssize_t pread(int fd, void *buf, size_t count, off_t offset)
+static ssize_t pread(int fd, void *buf, size_t count, int64_t offset)
 {
     OVERLAPPED ov;
     DWORD      got;
@@ -74,7 +74,7 @@ static ssize_t pread(int fd, void *buf, size_t count, off_t offset)
 #elif defined (NEED_PREAD_IMPL)
 
 #include <pthread.h>
-static ssize_t pread_impl(int fd, void *buf, size_t count, off_t offset)
+static ssize_t pread_impl(int fd, void *buf, size_t count, int64_t offset)
 {
     static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
     ssize_t result;
@@ -120,7 +120,7 @@ static int _def_close(udfread_block_input *p_gen)
 static uint32_t _def_size(udfread_block_input *p_gen)
 {
     default_block_input *p = (default_block_input *)p_gen;
-    off_t pos;
+    int64_t pos;
 
     pos = lseek(p->fd, 0, SEEK_END);
     if (pos < 0) {
@@ -134,13 +134,13 @@ static int _def_read(udfread_block_input *p_gen, uint32_t lba, void *buf, uint32
 {
     default_block_input *p = (default_block_input *)p_gen;
     size_t bytes, got;
-    off_t  pos;
+    int64_t  pos;
 
     (void)flags;
 
     bytes = (size_t)nblocks * UDF_BLOCK_SIZE;
     got   = 0;
-    pos   = (off_t)lba * UDF_BLOCK_SIZE;
+    pos   = (int64_t)lba * UDF_BLOCK_SIZE;
 
     while (got < bytes) {
         ssize_t ret = pread(p->fd, ((char*)buf) + got, bytes - got, pos + got);

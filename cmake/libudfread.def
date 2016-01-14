@@ -1,0 +1,16 @@
+EXPORTS
+       udfread_init
+       udfread_open
+	   udfread_open_input
+       udfread_close
+       udfread_closedir
+	   udfread_opendir
+	   udfread_readdir
+       udfread_file_close
+       udfread_file_open
+	   udfread_file_read
+	   udfread_file_seek
+	   udfread_file_size
+	   udfread_file_tell
+	   udfread_get_volume_id
+	   

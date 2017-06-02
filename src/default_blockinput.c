@@ -41,6 +41,11 @@
 #include <stdio.h>
 #endif
 #include <io.h>
+# undef  lseek
+# define lseek _lseeki64
+# undef  off_t
+# define off_t int64_t
+typedef signed long int ssize_t;
 #endif
 
 #ifdef __ANDROID__

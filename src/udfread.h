@@ -28,7 +28,7 @@ extern "C" {
 
 #include <stdint.h>    /* *int_t */
 #include <sys/types.h> /* *size_t */
-
+typedef signed long int ssize_t;
 /**
  * @file udfread/udfread.h
  * external API header
